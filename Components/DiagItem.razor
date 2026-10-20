@@ -1,0 +1,10 @@
+@* Components/DiagItem.razor — indicador de diagnóstico *@
+<div class="diag-item @(Ok ? "diag-ok" : "diag-fail")">
+    <span class="diag-icon">@(Ok ? "✅" : "❌")</span>
+    <span class="diag-label">@Label</span>
+</div>
+
+@code {
+    [Parameter] public string Label { get; set; } = "";
+    [Parameter] public bool   Ok    { get; set; }
+}

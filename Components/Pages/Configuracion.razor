@@ -1,0 +1,51 @@
+@page "/configuracion"
+@using AdminToolWeb.Services
+@inject SesionService Sesion
+@rendermode InteractiveServer
+
+<PageTitle>Configuración</PageTitle>
+
+<div class="page-header">
+    <h1>⚙️ Configuración</h1>
+    <p class="subtitle">Parámetros globales de la herramienta</p>
+</div>
+
+<div class="card">
+    <h3>Parámetros de red y sistema</h3>
+    <div class="form-grid">
+        <div class="form-group">
+            <label>Red base</label>
+            <input @bind="Sesion.Config.RedBase" class="form-input" placeholder="192.168.1" />
+            <small>Los primeros 3 octetos del segmento a escanear</small>
+        </div>
+        <div class="form-group">
+            <label>Dominio</label>
+            <input @bind="Sesion.Config.Dominio" class="form-input" placeholder="ejemplo.local" />
+        </div>
+        <div class="form-group" style="grid-column: span 2">
+            <label>Ruta de PsExec.exe</label>
+            <input @bind="Sesion.Config.PsExecPath" class="form-input" placeholder="C:\PSTools\PsExec.exe" />
+            <small>Necesario para habilitar WinRM remotamente</small>
+        </div>
+        <div class="form-group" style="grid-column: span 2">
+            <label>Carpeta de archivos generados</label>
+            <input @bind="Sesion.Config.ScriptDir" class="form-input" />
+        </div>
+    </div>
+    <button class="btn btn-primary" @onclick="Guardar">💾 Guardar</button>
+    @if (guardado) { <span class="alert-inline alert-ok">✅ Configuración aplicada.</span> }
+</div>
+
+@if (Sesion.Autenticado)
+{
+    <div class="card">
+        <h3>Sesión activa</h3>
+        <p>Usuario: <strong>@Sesion.Credenciales!.UsuarioCompleto</strong></p>
+        <button class="btn btn-outline" @onclick="Sesion.LimpiarCredenciales">🔓 Cerrar sesión</button>
+    </div>
+}
+
+@code {
+    bool guardado = false;
+    void Guardar() { guardado = true; Task.Delay(2000).ContinueWith(_ => { guardado = false; InvokeAsync(StateHasChanged); }); }
+}

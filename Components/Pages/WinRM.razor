@@ -1,0 +1,113 @@
+@page "/winrm"
+@using AdminToolWeb.Services
+@using AdminToolWeb.Models
+@inject SesionService Sesion
+@inject WinRMService Svc
+@implements IDisposable
+@rendermode InteractiveServer
+
+<PageTitle>Habilitar WinRM</PageTitle>
+
+<div class="page-header">
+    <h1>🔌 Habilitar WinRM</h1>
+    <p class="subtitle">Activa WinRM remotamente en equipos del dominio vía PsExec</p>
+</div>
+
+@if (!Sesion.Autenticado)
+{
+    <div class="alert alert-warn">🔑 Ingresa credenciales en la página de inicio primero.</div>
+    return;
+}
+
+<div class="card">
+    <h3>Configuración</h3>
+    <div class="form-grid">
+        <div class="form-group" style="grid-column: span 2">
+            <label>IPs separadas por comas (ej: 192.168.1.10, 192.168.1.11)</label>
+            <input @bind="ipsTexto" class="form-input" placeholder="192.168.1.10, 192.168.1.11" disabled="@Svc.Ejecutando" />
+        </div>
+    </div>
+    @if (!Svc.Ejecutando)
+    {
+        <button class="btn btn-primary" @onclick="Habilitar">⚡ Habilitar WinRM</button>
+    }
+    else
+    {
+        <p class="progress-text">⏳ Procesando equipos...</p>
+    }
+</div>
+
+<div class="card">
+    <h3>Diagnóstico de puertos</h3>
+    <div class="form-grid">
+        <div class="form-group">
+            <label>IP a diagnosticar</label>
+            <input @bind="ipDiag" class="form-input" placeholder="192.168.1.10" />
+        </div>
+    </div>
+    <button class="btn btn-outline" @onclick="Diagnosticar" disabled="@diagnosticando">
+        @(diagnosticando ? "Analizando..." : "🔎 Diagnosticar")
+    </button>
+
+    @if (diagResult != null)
+    {
+        <div class="diag-grid">
+            <DiagItem Label="Ping"     Ok="@diagResult.Ping"   />
+            <DiagItem Label="WinRM 5985" Ok="@diagResult.WinRM"  />
+            <DiagItem Label="WinRM-S 5986" Ok="@diagResult.WinRMS" />
+            <DiagItem Label="SMB 445"  Ok="@diagResult.SMB"    />
+            <DiagItem Label="DCOM 135" Ok="@diagResult.DCOM"   />
+            <DiagItem Label="RDP 3389" Ok="@diagResult.RDP"    />
+        </div>
+    }
+</div>
+
+@if (Svc.Log.Count > 0)
+{
+    <div class="card log-card">
+        <h4>Log</h4>
+        <div class="log-box">
+            @foreach (var e in Svc.Log.Take(100))
+            {
+                <div class="log-line log-@e.Nivel.ToLower()">
+                    <span class="log-time">@e.Fecha.ToString("HH:mm:ss")</span>
+                    <span class="log-msg">@e.Mensaje</span>
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    string ipsTexto = "", ipDiag = "";
+    bool diagnosticando = false;
+    DiagnosticoResult? diagResult;
+
+    protected override void OnInitialized() => Svc.OnCambio += Refrescar;
+    async void Refrescar() => await InvokeAsync(StateHasChanged);
+
+    async Task Habilitar()
+    {
+        var ips = ipsTexto.Split(',')
+            .Select(s => RedService.NormalizarIp(s.Trim(), Sesion.Config.RedBase))
+            .Where(s => !string.IsNullOrWhiteSpace(s)).ToList();
+        if (ips.Count == 0) return;
+        await Svc.HabilitarEnIpsAsync(ips, Sesion.Config, Sesion.Credenciales!);
+    }
+
+    async Task Diagnosticar()
+    {
+        if (string.IsNullOrWhiteSpace(ipDiag)) return;
+        diagnosticando = true;
+        diagResult = await Svc.DiagnosticarAsync(
+            RedService.NormalizarIp(ipDiag, Sesion.Config.RedBase));
+        diagnosticando = false;
+    }
+
+    public void Dispose() => Svc.OnCambio -= Refrescar;
+}
+
+@* Componente inline para ítem de diagnóstico *@
+@code {
+    // componente auxiliar declarado abajo
+}

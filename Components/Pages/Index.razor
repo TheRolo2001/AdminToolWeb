@@ -1,0 +1,91 @@
+@page "/"
+@using AdminToolWeb.Services
+@using AdminToolWeb.Models
+@inject SesionService Sesion
+@inject NavigationManager Nav
+@rendermode InteractiveServer
+
+<PageTitle>AdminTool — Inicio</PageTitle>
+
+<div class="page-header">
+    <h1>⚙️ AdminTool <span class="version">v7.0</span></h1>
+    <p class="subtitle">Herramienta de Administración Remota — Red: <strong>@Sesion.Config.RedBase.0/24</strong></p>
+</div>
+
+@if (!Sesion.Autenticado)
+{
+    <div class="card login-card">
+        <h2>🔑 Credenciales de dominio</h2>
+        <p class="text-muted">Ingresa las credenciales una vez y se reutilizan en todos los módulos.</p>
+        <div class="form-grid">
+            <div class="form-group">
+                <label>Usuario</label>
+                <input @bind="usuario" placeholder="administrador" class="form-input" />
+            </div>
+            <div class="form-group">
+                <label>Contraseña</label>
+                <input @bind="password" type="password" class="form-input" />
+            </div>
+            <div class="form-group">
+                <label>Dominio</label>
+                <input @bind="dominio" placeholder="ejemplo.local" class="form-input" />
+            </div>
+        </div>
+        <button class="btn btn-primary" @onclick="Ingresar">Ingresar</button>
+        @if (!string.IsNullOrWhiteSpace(error))
+        {
+            <div class="alert alert-error">@error</div>
+        }
+    </div>
+}
+else
+{
+    <div class="stats-grid">
+        <div class="stat-card" @onclick='() => Nav.NavigateTo("/inventario")'>
+            <div class="stat-icon">📊</div>
+            <div class="stat-label">Inventario de Red</div>
+            <div class="stat-desc">Escanea y mapea todos los equipos del segmento</div>
+        </div>
+        <div class="stat-card" @onclick='() => Nav.NavigateTo("/renombrar")'>
+            <div class="stat-icon">✏️</div>
+            <div class="stat-label">Renombrar Equipos</div>
+            <div class="stat-desc">WMI nativo · WinRM · WMIC en cascada automática</div>
+        </div>
+        <div class="stat-card" @onclick='() => Nav.NavigateTo("/winrm")'>
+            <div class="stat-icon">🔌</div>
+            <div class="stat-label">Habilitar WinRM</div>
+            <div class="stat-desc">Activa WinRM remotamente vía PsExec</div>
+        </div>
+        <div class="stat-card" @onclick='() => Nav.NavigateTo("/configuracion")'>
+            <div class="stat-icon">⚙️</div>
+            <div class="stat-label">Configuración</div>
+            <div class="stat-desc">Red, dominio, rutas y credenciales</div>
+        </div>
+    </div>
+
+    <div class="card session-info">
+        <h3>Sesión activa</h3>
+        <table class="info-table">
+            <tr><td>Usuario</td><td><strong>@Sesion.Credenciales!.UsuarioCompleto</strong></td></tr>
+            <tr><td>Dominio</td><td>@Sesion.Config.Dominio</td></tr>
+            <tr><td>Red base</td><td>@Sesion.Config.RedBase.0/24</td></tr>
+            <tr><td>PsExec</td><td>@Sesion.Config.PsExecPath</td></tr>
+        </table>
+        <button class="btn btn-outline" @onclick="Cerrar">🔓 Cerrar sesión</button>
+    </div>
+}
+
+@code {
+    string usuario = "", password = "", dominio = "", error = "";
+
+    void Ingresar()
+    {
+        if (string.IsNullOrWhiteSpace(usuario) || string.IsNullOrWhiteSpace(password))
+        { error = "Completa usuario y contraseña."; return; }
+        string dom = string.IsNullOrWhiteSpace(dominio) ? Sesion.Config.Dominio : dominio;
+        Sesion.GuardarCredenciales(usuario, password, dom);
+        error = "";
+    }
+
+    void Cerrar() => Sesion.LimpiarCredenciales();
+}

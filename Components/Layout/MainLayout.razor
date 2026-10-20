@@ -1,0 +1,35 @@
+@inherits LayoutComponentBase
+@using AdminToolWeb.Services
+@inject SesionService Sesion
+
+<div class="shell">
+    <nav class="sidebar">
+        <div class="sidebar-brand">
+            <span class="brand-icon">⚙</span>
+            <span class="brand-text">AdminTool<br/><small>v7.0</small></span>
+        </div>
+
+        <div class="nav-section">GENERAL</div>
+        <a class="nav-link" href="/">🏠 Inicio</a>
+
+        <div class="nav-section">MÓDULOS</div>
+        <a class="nav-link" href="/inventario">📊 Inventario de Red</a>
+        <a class="nav-link" href="/renombrar">✏️ Renombrar Equipos</a>
+        <a class="nav-link" href="/winrm">🔌 Habilitar WinRM</a>
+
+        <div class="nav-section">SISTEMA</div>
+        <a class="nav-link" href="/configuracion">⚙️ Configuración</a>
+
+        @if (Sesion.Autenticado)
+        {
+            <div class="nav-cred">
+                <span class="cred-icon">🔑</span>
+                <span class="cred-text">@Sesion.Credenciales!.UsuarioCompleto</span>
+            </div>
+        }
+    </nav>
+
+    <main class="content">
+        @Body
+    </main>
+</div>

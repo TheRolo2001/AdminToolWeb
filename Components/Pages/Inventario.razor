@@ -1,0 +1,151 @@
+@page "/inventario"
+@using AdminToolWeb.Services
+@using AdminToolWeb.Models
+@inject SesionService Sesion
+@inject InventarioService Inv
+@implements IDisposable
+@rendermode InteractiveServer
+
+<PageTitle>Inventario de Red</PageTitle>
+
+<div class="page-header">
+    <h1>📊 Inventario de Red</h1>
+    <p class="subtitle">Escaneo paralelo con detección de hardware via WMI</p>
+</div>
+
+@if (!Sesion.Autenticado)
+{
+    <div class="alert alert-warn">🔑 Ingresa credenciales en la página de inicio primero.</div>
+    return;
+}
+
+<div class="card">
+    <h3>Configuración de escaneo</h3>
+    <div class="form-grid">
+        <div class="form-group">
+            <label>Red base</label>
+            <input @bind="redBase" class="form-input" placeholder="192.168.1" disabled="@Inv.Escaneando" />
+        </div>
+        <div class="form-group">
+            <label>IP inicio</label>
+            <input @bind="inicio" type="number" min="1" max="254" class="form-input" disabled="@Inv.Escaneando" />
+        </div>
+        <div class="form-group">
+            <label>IP fin</label>
+            <input @bind="fin" type="number" min="1" max="254" class="form-input" disabled="@Inv.Escaneando" />
+        </div>
+        <div class="form-group form-check">
+            <label>
+                <input type="checkbox" @bind="usarWmi" disabled="@Inv.Escaneando" />
+                Obtener hardware via WMI
+            </label>
+        </div>
+    </div>
+
+    @if (Inv.Escaneando)
+    {
+        <div class="progress-bar-wrap">
+            <div class="progress-bar" style="width:@(Inv.Total > 0 ? (Inv.Progreso * 100 / Inv.Total) : 0)%"></div>
+        </div>
+        <p class="progress-text">Escaneando @Inv.Progreso / @Inv.Total IPs...</p>
+        <button class="btn btn-danger" @onclick="Cancelar">⏹ Detener</button>
+    }
+    else
+    {
+        <button class="btn btn-primary" @onclick="Escanear">🔍 Iniciar escaneo</button>
+        @if (Inv.Resultados.Count > 0)
+        {
+            <button class="btn btn-outline" @onclick="DescargarCSV">⬇ Descargar CSV</button>
+        }
+    }
+</div>
+
+@if (Inv.Log.Count > 0)
+{
+    <div class="card log-card">
+        <h4>Log en tiempo real</h4>
+        <div class="log-box">
+            @foreach (var e in Inv.Log.Take(50))
+            {
+                <div class="log-line log-@e.Nivel.ToLower()">
+                    <span class="log-time">@e.Fecha.ToString("HH:mm:ss")</span>
+                    <span class="log-msg">@e.Mensaje</span>
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@if (Inv.Resultados.Count > 0 && !Inv.Escaneando)
+{
+    <div class="card">
+        <div class="result-header">
+            <h3>Resultados — @Inv.Resultados.Count equipos</h3>
+            <div class="result-stats">
+                <span class="badge badge-green">@Inv.Resultados.Count(e => e.Serial != "No disponible") con serial</span>
+                <span class="badge badge-blue">@Inv.Resultados.Count(e => e.EstadoWMI == "OK") con WMI</span>
+            </div>
+        </div>
+        <div class="table-wrap">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>IP</th><th>Hostname</th><th>Serial</th>
+                        <th>Fabricante</th><th>Modelo</th><th>SO</th>
+                        <th>RAM</th><th>Tipo</th><th>Servicios</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var e in Inv.Resultados)
+                    {
+                        <tr>
+                            <td><strong>@e.IP</strong></td>
+                            <td>@e.Hostname</td>
+                            <td class="@(e.Serial != "No disponible" ? "serial-ok" : "")">@e.Serial</td>
+                            <td>@e.Fabricante</td>
+                            <td>@e.Modelo</td>
+                            <td><span class="badge badge-blue">@e.SO</span></td>
+                            <td>@e.RamGB GB</td>
+                            <td><span class="badge badge-green">@e.Tipo</span></td>
+                            <td><small>@e.Servicios</small></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+}
+
+@code {
+    string redBase = "192.168.1";
+    int    inicio  = 1, fin = 254;
+    bool   usarWmi = false;
+    CancellationTokenSource? cts;
+
+    protected override void OnInitialized()
+    {
+        redBase       = Sesion.Config.RedBase;
+        Inv.OnCambio += Refrescar;
+    }
+
+    async void Refrescar() => await InvokeAsync(StateHasChanged);
+
+    async Task Escanear()
+    {
+        cts = new CancellationTokenSource();
+        await Inv.EscanearAsync(redBase, inicio, fin,
+            usarWmi ? Sesion.Credenciales : null, cts.Token);
+    }
+
+    void Cancelar() => cts?.Cancel();
+
+    void DescargarCSV()
+    {
+        string ts   = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+        string ruta = Path.Combine(Sesion.Config.ScriptDir, $"inventario_{ts}.csv");
+        Directory.CreateDirectory(Sesion.Config.ScriptDir);
+        File.WriteAllText(ruta, Inv.GenerarCSV());
+    }
+
+    public void Dispose() => Inv.OnCambio -= Refrescar;
+}

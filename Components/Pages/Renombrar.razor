@@ -1,0 +1,267 @@
+@page "/renombrar"
+@using AdminToolWeb.Services
+@using AdminToolWeb.Models
+@inject SesionService Sesion
+@inject RenombrarService Svc
+@implements IDisposable
+@rendermode InteractiveServer
+
+<PageTitle>Renombrar Equipos</PageTitle>
+
+<div class="page-header">
+    <h1>✏️ Renombrar Equipos</h1>
+    <p class="subtitle">WMI nativo · WinRM/PS · WMIC — cascada automática</p>
+</div>
+
+@if (!Sesion.Autenticado)
+{
+    <div class="alert alert-warn">🔑 Ingresa credenciales en la página de inicio primero.</div>
+    return;
+}
+
+<!-- Agregar equipos -->
+<div class="card">
+    <h3>Agregar equipos a la cola</h3>
+    <div class="tab-bar">
+        <button class="tab @(tab == 0 ? "tab-active" : "")" @onclick='() => tab = 0'>IP manual</button>
+        <button class="tab @(tab == 1 ? "tab-active" : "")" @onclick='() => tab = 1'>Escanear red</button>
+        <button class="tab @(tab == 2 ? "tab-active" : "")" @onclick='() => tab = 2'>Patrón automático</button>
+        <button class="tab @(tab == 3 ? "tab-active" : "")" @onclick='() => tab = 3'>Importar CSV</button>
+    </div>
+
+    @if (tab == 0)
+    {
+        <div class="form-grid">
+            <div class="form-group">
+                <label>IP del equipo</label>
+                <input @bind="ipManual" placeholder="192.168.1.10" class="form-input" />
+            </div>
+            <div class="form-group">
+                <label>Nuevo nombre</label>
+                <input @bind="nuevoManual" placeholder="PC-001" class="form-input" />
+            </div>
+        </div>
+        <button class="btn btn-primary" @onclick="BuscarYAgregar" disabled="@buscando">
+            @(buscando ? "Buscando..." : "🔍 Buscar y agregar")
+        </button>
+        @if (!string.IsNullOrEmpty(msgManual))
+        {
+            <div class="alert @(msgManual.StartsWith("✅") ? "alert-ok" : "alert-error")">@msgManual</div>
+        }
+    }
+
+    @if (tab == 1)
+    {
+        <p class="text-muted">Escanea la red y selecciona los equipos que deseas renombrar.</p>
+        <button class="btn btn-primary" @onclick="EscanearRed" disabled="@escaneando">
+            @(escaneando ? "Escaneando..." : "🔍 Escanear red")
+        </button>
+        @if (equiposEscaneados.Count > 0)
+        {
+            <div class="table-wrap" style="margin-top:1rem">
+                <table class="data-table">
+                    <thead><tr><th>IP</th><th>Nombre actual</th><th>Canal</th><th>Nuevo nombre</th><th></th></tr></thead>
+                    <tbody>
+                        @foreach (var eq in equiposEscaneados)
+                        {
+                            <tr>
+                                <td>@eq.ip</td>
+                                <td>@eq.nombre</td>
+                                <td><span class="badge badge-blue">@eq.canal</span></td>
+                                <td><input @bind="nuevosNombres[eq.ip]" class="form-input form-input-sm" placeholder="nuevo nombre" /></td>
+                                <td>
+                                    <button class="btn btn-sm btn-primary"
+                                            @onclick="() => AgregarDeEscaneo(eq.ip, eq.nombre)">+</button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    }
+
+    @if (tab == 2)
+    {
+        <p class="text-muted">Genera nombres secuenciales automáticamente. Patrones: {N} {N2} {N3} {N4}</p>
+        @if (equiposEscaneados.Count == 0)
+        {
+            <button class="btn btn-outline" @onclick="EscanearRed" disabled="@escaneando">
+                @(escaneando ? "Escaneando..." : "🔍 Escanear primero")
+            </button>
+        }
+        else
+        {
+            <div class="form-grid">
+                <div class="form-group">
+                    <label>Patrón (ej: LAB-{N3})</label>
+                    <input @bind="patron" class="form-input" placeholder="PC-{N3}" />
+                </div>
+                <div class="form-group">
+                    <label>Número inicial</label>
+                    <input @bind="numInicio" type="number" min="1" class="form-input" />
+                </div>
+            </div>
+            <div class="preview-list">
+                @for (int i = 0; i < Math.Min(equiposEscaneados.Count, 5); i++)
+                {
+                    int idx = i;
+                    string prev = RenombrarService.GenerarConPatron(patron, numInicio + idx);
+                    <span class="preview-item">@equiposEscaneados[idx].nombre → <strong>@prev</strong></span>
+                }
+                @if (equiposEscaneados.Count > 5) { <span class="preview-item text-muted">...y @(equiposEscaneados.Count - 5) más</span> }
+            </div>
+            <button class="btn btn-primary" @onclick="AgregarConPatron">✅ Agregar todos con patrón</button>
+        }
+    }
+
+    @if (tab == 3)
+    {
+        <p class="text-muted">Formato CSV: <code>ip;nombre_actual;nuevo_nombre</code> separado por punto y coma.</p>
+        <textarea @bind="csvTexto" class="form-textarea" rows="6" placeholder="ip;nombre_actual;nuevo_nombre&#10;192.168.1.10;PC-VIEJO;PC-001&#10;192.168.1.11;PC-VIEJO2;PC-002"></textarea>
+        <button class="btn btn-primary" @onclick="ImportarCSV">📥 Importar</button>
+        @if (!string.IsNullOrEmpty(msgCSV))
+        {
+            <div class="alert alert-ok">@msgCSV</div>
+        }
+    }
+</div>
+
+<!-- Cola de renombrado -->
+@if (Svc.Cola.Count > 0)
+{
+    <div class="card">
+        <div class="result-header">
+            <h3>Cola de renombrado — @Svc.Cola.Count equipos</h3>
+            <button class="btn btn-outline btn-sm" @onclick="Svc.LimpiarCola" disabled="@Svc.Ejecutando">🗑 Limpiar</button>
+        </div>
+
+        <div class="table-wrap">
+            <table class="data-table">
+                <thead><tr><th>IP</th><th>Nombre actual</th><th>Nuevo nombre</th><th>Estado</th><th>Método</th><th></th></tr></thead>
+                <tbody>
+                    @for (int i = 0; i < Svc.Cola.Count; i++)
+                    {
+                        var item = Svc.Cola[i];
+                        int idx = i;
+                        string estadoClass = item.Resultado == "OK" ? "badge-green" :
+                                             item.Resultado == "ERROR" ? "badge-red" :
+                                             item.Resultado == "Procesando..." ? "badge-yellow" : "badge-gray";
+                        <tr>
+                            <td>@item.IP</td>
+                            <td>@item.NombreActual</td>
+                            <td><strong>@item.NuevoNombre</strong></td>
+                            <td><span class="badge @estadoClass">@item.Resultado</span></td>
+                            <td><small>@item.Metodo</small></td>
+                            <td>
+                                @if (!Svc.Ejecutando)
+                                {
+                                    <button class="btn btn-sm btn-danger" @onclick="() => Svc.EliminarItem(idx)">✕</button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        @if (!Svc.Ejecutando)
+        {
+            <div class="action-row">
+                <label><input type="checkbox" @bind="reiniciar" /> Reiniciar automáticamente</label>
+                <button class="btn btn-primary" @onclick="Ejecutar">▶ Ejecutar renombrado</button>
+            </div>
+        }
+        else
+        {
+            <p class="progress-text">⏳ Ejecutando... @Svc.Cola.Count(i => i.Resultado is "OK" or "ERROR") / @Svc.Cola.Count</p>
+        }
+    </div>
+}
+
+@if (Svc.Log.Count > 0)
+{
+    <div class="card log-card">
+        <h4>Log de operaciones</h4>
+        <div class="log-box">
+            @foreach (var e in Svc.Log.Take(50))
+            {
+                <div class="log-line log-@e.Nivel.ToLower()">
+                    <span class="log-time">@e.Fecha.ToString("HH:mm:ss")</span>
+                    <span class="log-msg">@e.Mensaje</span>
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    int    tab       = 0;
+    bool   reiniciar = false;
+    bool   buscando  = false;
+    bool   escaneando = false;
+    string ipManual  = "", nuevoManual = "", msgManual = "";
+    string patron    = "PC-{N3}";
+    int    numInicio = 1;
+    string csvTexto  = "", msgCSV = "";
+
+    List<(string ip, string nombre, string canal)> equiposEscaneados = [];
+    Dictionary<string, string> nuevosNombres = new();
+
+    protected override void OnInitialized() => Svc.OnCambio += Refrescar;
+    async void Refrescar() => await InvokeAsync(StateHasChanged);
+
+    async Task BuscarYAgregar()
+    {
+        msgManual = "";
+        if (string.IsNullOrWhiteSpace(ipManual)) { msgManual = "❌ Ingresa una IP."; return; }
+        var (v, m) = RenombrarService.ValidarNombre(nuevoManual);
+        if (!v) { msgManual = $"❌ {m}"; return; }
+
+        buscando = true;
+        string ip = RedService.NormalizarIp(ipManual, Sesion.Config.RedBase);
+        string? nombreActual = await Task.Run(() => Svc.ObtenerNombreRemoto(ip, Sesion.Credenciales!));
+        buscando = false;
+
+        if (nombreActual == null) { msgManual = $"❌ No se pudo conectar a {ip}."; return; }
+        Svc.AgregarItem(ip, nombreActual, nuevoManual);
+        msgManual = $"✅ {ip} ({nombreActual}) agregado a la cola.";
+        ipManual = nuevoManual = "";
+    }
+
+    async Task EscanearRed()
+    {
+        escaneando = true;
+        equiposEscaneados = await Svc.EscanearEquiposAsync(Sesion.Config.RedBase, Sesion.Credenciales!);
+        foreach (var eq in equiposEscaneados) nuevosNombres[eq.ip] = "";
+        escaneando = false;
+    }
+
+    void AgregarDeEscaneo(string ip, string nombreActual)
+    {
+        string nuevo = nuevosNombres.GetValueOrDefault(ip, "");
+        if (string.IsNullOrWhiteSpace(nuevo)) return;
+        Svc.AgregarItem(ip, nombreActual, nuevo);
+        nuevosNombres[ip] = "";
+    }
+
+    void AgregarConPatron()
+    {
+        for (int i = 0; i < equiposEscaneados.Count; i++)
+        {
+            string nuevo = RenombrarService.GenerarConPatron(patron, numInicio + i);
+            Svc.AgregarItem(equiposEscaneados[i].ip, equiposEscaneados[i].nombre, nuevo);
+        }
+    }
+
+    void ImportarCSV()
+    {
+        var (agregados, errores) = Svc.ImportarCSV(csvTexto);
+        msgCSV = $"✅ {agregados} equipos importados.";
+        if (errores.Count > 0) msgCSV += $" ⚠ {errores.Count} líneas con error.";
+    }
+
+    async Task Ejecutar() => await Svc.EjecutarColaAsync(Sesion.Credenciales!, reiniciar);
+
+    public void Dispose() => Svc.OnCambio -= Refrescar;
+}
