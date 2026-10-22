@@ -111,9 +111,3 @@ Esta herramienta está pensada para **uso interno y en laboratorios**, y ejecuta
 - Persistencia del historial de inventarios.
 - Exportación a Excel y comparación entre escaneos.
 - Pruebas unitarias para la validación y los patrones de nombres.
-
----
-
-## 📄 Licencia
-
-Distribuido bajo la licencia MIT (agrega un archivo `LICENSE` al repositorio).
